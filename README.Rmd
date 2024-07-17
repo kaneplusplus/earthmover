@@ -40,7 +40,7 @@ devtools::install_github("kaneplusplus/earthmover")
 
 
 ```{r example}
-library(dplyr)
+library(dplyr, warn.conflicts = FALSE)
 library(earthmover)
 library(future)
 
