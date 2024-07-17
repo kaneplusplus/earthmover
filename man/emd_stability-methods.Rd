@@ -25,6 +25,8 @@ a tibble with the following variable.
 \itemize{
 \item var: The variable (either "x" or "y").
 \item row: The row for the corresponding variable.
+\item dist: The earthmover distance from the data set, minus the sample to the
+other data set.
 \item diff: The difference between the earthmover distance and the earthmover
 distance with the row removed.
 \item p_overall: the empirical p-value of the difference compared to all other

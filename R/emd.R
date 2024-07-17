@@ -220,6 +220,8 @@ setMethod(
 #' @return a tibble with the following variable.
 #' * var: The variable (either "x" or "y").
 #' * row: The row for the corresponding variable.
+#' * dist: The earthmover distance from the data set, minus the sample to the
+#'   other data set.
 #' * diff: The difference between the earthmover distance and the earthmover
 #'   distance with the row removed.
 #' * p_overall: the empirical p-value of the difference compared to all other
@@ -253,11 +255,11 @@ two_sided_percentile = function(d) {
 }
 
 calc_two_sided_percentile_across = function(d) {
-  x_diff = d$diff[d$var == "x"]
-  y_diff = d$diff[d$var == "y"]
-  xp = ecdf(y_diff)(x_diff)
+  x_dist = d$dist[d$var == "x"]
+  y_dist = d$dist[d$var == "y"]
+  xp = ecdf(y_dist)(x_dist)
   xp = vapply(xp, \(x) min(x, 1 - x), NA_real_)
-  yp = ecdf(x_diff)(y_diff)
+  yp = ecdf(x_dist)(y_dist)
   yp = vapply(yp, \(x) min(x, 1 - x), NA_real_)
   c(xp, yp)
 }
@@ -285,19 +287,20 @@ setMethod(
     )
     ys = future_map_dbl(
       seq_len(nrow(y)),
-      ~ emd_impl(x, y[-.x,,drop = FALSE], p)$dist - ref_dist,
+      ~ emd_impl(x, y[-.x,,drop = FALSE], p)$dist,
       .options=furrr_options(seed=TRUE),
       progress = progress
     )
     ret = tibble(
       var = c(rep("x", length(xs)), rep("y", length(ys))),
       row = c(seq_len(length(xs)), seq_len(length(ys))),
-      diff = c(xs, ys)
+      dist = c(xs, ys),
+      diff = c(xs - ref_dist, ys - ref_dist)
     )
     ret$p_overall = two_sided_percentile(ret$diff)
     ret$p_within = c(
-      two_sided_percentile(ret$diff[ret$var == "x"]),
-      two_sided_percentile(ret$diff[ret$var == "y"])
+      two_sided_percentile(ret$dist[ret$var == "x"]),
+      two_sided_percentile(ret$dist[ret$var == "y"])
     )
     ret$p_across = calc_two_sided_percentile_across(ret)
     ret
