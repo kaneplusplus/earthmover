@@ -286,7 +286,7 @@ setMethod(
     )
     ys = future_map_dbl(
       seq_len(nrow(y)),
-      ~ ref_dist - emd_impl(x, y[-.x,,drop = FALSE], p)$dist,
+      ~ emd_impl(x, y[-.x,,drop = FALSE], p)$dist - ref_dist,
       .options=furrr_options(seed=TRUE),
       progress = progress
     )
