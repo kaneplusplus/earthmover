@@ -40,20 +40,29 @@ devtools::install_github("kaneplusplus/earthmover")
 
 
 ```{r example}
-library(dplyr, warn.conflicts = FALSE)
 library(earthmover)
 library(future)
+library(tibble)
 
 # Run in parallel.
 plan("multisession", workers = 2)
 
 # Subset iris for our x and y.
-iris1 = iris |> filter(Sepal.Length < 5.8)
-iris2 = iris |> filter(Sepal.Length >= 5.8)
+iris1 = iris[1:50,]
+iris2 = iris[51:100,]
+
+# Formatting output for nicer presentation.
+pairs_to_tibble = \(x) {
+  x$pairs = as_tibble(x$pairs, .name_repair = "minimal")
+  x
+}
 
 # The distance between the two subsets of data.
+emd(iris1, iris2) |> 
+  pairs_to_tibble()
 
 # The distance between the a subsets and itself.
-emd(iris1, iris1)
+emd(iris1, iris1) |>
+  pairs_to_tibble()
 ```
 
