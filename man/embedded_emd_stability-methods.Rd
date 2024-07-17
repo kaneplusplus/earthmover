@@ -39,7 +39,7 @@ in the other data set.
 The earthmover distance is the sum of the Minkowski
 distances of samples, weighted their transport coefficients. The
 \code{embedded_emd_stability()} function evaluates how stable the distance
-is in each of the samples embedding defined by a supvervised learner by
+is in each of the samples embedding defined by a model by
 iteratively removing each sample, calating the new earthmover distance and
 subtracting that from the earthmover distance
 will all samples. The difference between those distances can then be used

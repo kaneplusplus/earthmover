@@ -7,7 +7,7 @@ row_outer_product = function(x, y, fun) {
       ~ {
         m = matrix(0, nrow = 1, ncol = nrow(y))
         for (j in seq_len(nrow(y))) {
-          m[1, j] = fun(x[.x, ], y[.x, ])
+          m[1, j] = fun(x[.x, ], y[j, ])
         }
         m
     }
@@ -349,7 +349,7 @@ setMethod(
 #' @description The earthmover distance is the sum of the Minkowski 
 #' distances of samples, weighted their transport coefficients. The 
 #' `embedded_emd_stability()` function evaluates how stable the distance 
-#' is in each of the samples embedding defined by a supvervised learner by 
+#' is in each of the samples embedding defined by a model by 
 #' iteratively removing each sample, calating the new earthmover distance and 
 #' subtracting that from the earthmover distance
 #' will all samples. The difference between those distances can then be used
