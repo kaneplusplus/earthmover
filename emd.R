@@ -1,107 +1,100 @@
-library(foreach)
-library(T4transport)
+library(transport)
 library(Matrix)
 library(randomForestSRC)
 library(dplyr)
 library(ggplot2)
-library(S7)
+library(future)
+library(purrr)
+#library(doFuture)
+#library(doRNG)
+library(furrr)
+
+plan(sequential)
+#registerDoFuture()
 
 m = 3
 n = 5
 X = matrix(rnorm(m*2, mean=-1),ncol=2) # m obs. for X
 Y = matrix(rnorm(n*2, mean=+1),ncol=2) # n obs. for Y
 
+# Helper function apply a function to all row combinations.
 row_outer_product = function(x, y, fun) {
-  if (!getDoParRegistered()) {
-    registerDoSEQ()
-  }
-  ret = foreach(i = seq_len(nrow(x)), .combine = rbind) %dopar% {
-    m = matrix(0, nrow = 1, ncol = nrow(y))
-    for (j in seq_len(nrow(y))) {
-      m[1,j] = fun(x[i,], y[j,])
+  map(
+      seq_len(nrow(x)),
+      ~ {
+        m = matrix(0, nrow = 1, ncol = nrow(y))
+        for (j in seq_len(nrow(y))) {
+          m[1, j] = fun(x[.x, ], y[.x, ])
+        }
+        m
     }
-    m
-  }
-  ret
+  ) |> reduce(rbind)
 }
 
+#' The Minkowski Distance
 minkowski = function(x, y, p = 2) {
   row_outer_product(x, y, \(x, y) sum((x - y)^2)^(1/p))
 }
 
 cost = minkowski(X, Y)
 
+setClassUnion("numeric_or_missing", c("missing", "numeric"))
+setClassUnion("logical_or_missing", c("missing", "logical"))
+setOldClass("rfsrc")
+
+#' @name The Earthmover Distance
+#' @description Calculate the earthmover distance between data sets `x` and 
+#' `y`.
+#' @aliases 
+#'  emd,data.frame,data.frame,numeric_or_missing-method
+#'  emd,matrix,matrix,numeric_or_missing-method
+#'  emd,Matrix,Matrix,numeric_or_missing-method
+#' @param x a `matrix`, `Matrix`, or `data.frame`.
+#' @param y a `matrix`, `Matrix`, or `data.frame`.
+#' @param p an exponent for the order of the distance (default: 2)
+#' @return a list with the following elements:
+#' * dist - the earthmover distance between `x` and `y`.
+#' * pairs - the transportation plan from rows of `x` to rows of `y`
+#'   along with the amount of mass to move.
+#' @examples
+#' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
+#' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
+#' emd(X, Y)
+#' @export
 setGeneric(
   "emd", 
-  function(x, y, p, keep_pairs, eps) standardGeneric("emd")
+  function(x, y, p) standardGeneric("emd")
 )
+
+# The implementation of emd().
+emd_impl = function(x, y, p) {
+  if (missing(p)) {
+    p = 2
+  }
+  cost = minkowski(x, y, p)
+  matches = transport(
+    rep(1/nrow(x), nrow(x)),
+    rep(1/nrow(y), nrow(y)),
+    cost
+  )
+  xp = x[matches[, 1], ]
+  yp = y[matches[, 2], ]
+  colnames(matches) = NULL
+  list(
+    # Log this for numerical stability?
+    dist = sum(matches[,3] * apply((xp - yp)^p, 1, sum))^(1/p),
+    pairs = matches
+  )
+}
 
 setMethod(
   "emd",
   signature(
     x = "Matrix",
     y = "Matrix",
-    p = "numeric",
-    keep_pairs = "ANY",
-    eps = "ANY"
+    p = "numeric_or_missing"
   ),
-  function(x, y, p, keep_pairs, eps) {
-    cost = minkowski(x, y, p)
-    t4 = wassersteinD(cost, p = p)
-    if (missing(eps)) {
-      eps = 1e-8
-    }
-    if (!is.numeric(eps)) {
-      stop("The eps argument must be the numerical precision.")
-    }
-    if (missing(keep_pairs)) {
-      keep_pairs = FALSE
-    }
-    if (!is.logical(keep_pairs) || length(keep_pairs) != 1) {
-      stop("`keep_pairs` should be a single logical value.")
-    }
-    if (keep_pairs) {
-      matches = Reduce(
-        cbind, 
-        mat2triplet(t4$plan) |> 
-          (\(x) {
-            keep = which(abs(x$x) > eps)
-            list(
-              i = x$i[keep],
-              j = x$j[keep],
-              x = x$x[keep]
-            )
-          })()
-      )
-      # xp = x[matches[, 1], ]
-      # yp = y[matches[, 2], ]
-      colnames(matches) = NULL
-      list(
-        # Calculated as sum(matches[,3] * apply((xp - yp)^p, 1, sum))^(1/p).
-        dist = t4$distance,
-        pairs = matches
-      )
-    } else {
-      list(
-        dist = t4$dist,
-        pairs = NULL
-      )
-    }
-  }
-)
-
-setMethod(
-  "emd",
-  signature(
-    x = "Matrix",
-    y = "Matrix",
-    p = "missing",
-    keep_pairs = "ANY",
-    eps = "ANY"
-  ),
-  function(x, y, p, eps) {
-    emd(x, y, 2, eps)
-  }
+  emd_impl
 )
 
 setMethod(
@@ -109,26 +102,13 @@ setMethod(
   signature(
     x = "matrix",
     y = "matrix",
-    p = "numeric",
-    keep_pairs = "ANY",
-    eps = "ANY"
+    p = "numeric_or_missing"
   ),
-  function(x, y, p, eps) {
-    emd(as(x, "Matrix"), as(y, "Matrix"), p = p, eps = eps)
-  }
-)
-
-setMethod(
-  "emd",
-  signature(
-    x = "matrix",
-    y = "matrix",
-    p = "missing",
-    keep_pairs = "ANY",
-    eps = "ANY"
-  ),
-  function(x, y, p, eps) {
-    emd(as(x, "Matrix"), as(y, "Matrix"), p = 2, eps = eps)
+  function(x, y, p) {
+    if (missing(p)) {
+      p = 2
+    }
+    emd(as(x, "Matrix"), as(y, "Matrix"), p = p)
   }
 )
 
@@ -141,49 +121,258 @@ df_to_matrix = function(df) {
   mm
 }
 
+create_matrices_from_data_frames = function(x, y) {
+  xm = df_to_matrix(x)
+  ym = df_to_matrix(y)
+  if (ncol(xm) != ncol(ym)) {
+    stop("Number of columns differ after making the model matrix.")
+  }
+  if (!all(names(xm) == names(ym))) {
+    stop("Data frame names don't line up.")
+  }
+  list(xm = xm, ym = ym)  
+}
+
 setMethod(
   "emd",
   signature(
     x = "data.frame",
     y = "data.frame",
-    p = "numeric",
-    keep_pairs = "ANY",
-    eps = "ANY"
+    p = "numeric_or_missing"
   ),
   function(x, y, p) {
-    xm = df_to_matrix(x)
-    ym = df_to_matrix(y)
-    if (ncol(xm) != ncol(ym)) {
-      stop("Number of columns differ after making the model matrix.")
+    if (missing(p)) {
+      p = 2
     }
-    if (!all(names(xm) == names(ym))) {
-      stop("Data frame names don't line up.")
+    l = create_matrices_from_data_frames(x, y)
+    emd(l$xm, l$ym, p)
+  }
+)
+
+#' @name The Earthmover Distance in a Supervised Learner Embedding
+#' @description Calculate the earthmover distance between data sets `x` and
+#' `y` in the embedding defined by the supervised learner `model`.
+#' @aliases embedded_emd,data.frame,data.frame,rfsrc,numeric_or_missing-method
+#' @param x a `matrix`, `Matrix`, or `data.frame`.
+#' @param y a `matrix`, `Matrix`, or `data.frame`.
+#' @param model the supervised learner that will induce the embedded 
+#' representation of `x` and `y`.
+#' @param p an exponent for the order of the distance (default: 2)
+#' @return a list with the following elements:
+#' * dist - the earthmover distance between `x` and `y`.
+#' * pairs - the transportation plan from rows of `x` to rows of `y`
+#'   along with the amount of mass to move.
+#' @examples
+#' library(dplyr)
+#' library(randomForestSRC)
+#'
+#' # Subset iris for our x and y.
+#' iris1 = iris |> filter(Sepal.Length < 5.8)
+#' iris2 = iris |> filter(Sepal.Length >= 5.8)
+#'
+#' # Create a supervised model.
+#' fit1 = rfsrc(
+#'   Species ~ .,
+#'   data = iris1
+#' )
+#'
+#' # Calculate the embedding distance between the data sets.
+#' embedded_emd(iris1, iris2, fit1)
+#' @export
+setGeneric(
+  "embedded_emd",
+  function(x, y, model, p) standardGeneric("embedded_emd")
+)
+
+embed_samples = function(x, y, model) {
+  xy = rbind(x, y)
+  dists = predict(model, xy, distance = TRUE)$distance
+  cs = cmdscale(d = dists, k = ncol(x)-1)
+  xm = cs[seq_len(nrow(x)),]
+  ym = cs[(nrow(x) + 1):nrow(xy),]
+  list(xm = xm, ym = ym)
+}
+
+setMethod(
+  "embedded_emd",
+  signature(
+    x = "data.frame",
+    y = "data.frame",
+    model = "rfsrc",
+    p = "numeric_or_missing"
+  ),
+  function(x, y, model, p) {
+    if (missing(p)) {
+      p = 2
     }
-    emd(xm, ym, p)
+    l = embed_samples(x, y, model)
+    emd(l$xm, l$ym)
+  }
+)
+
+#' @name Evaluate the Stability of the Earthmove Distance in Each Sample
+#' @description The earthmover distance is the sum of the Minkowski 
+#' distances of samples, weighted their transport coefficients. The 
+#' `emd_stability()` function evaluates how stable the distance is in each
+#' of the samples by iteratively removing each sample, calating the new
+#' earthmover distance and subtracting that from the earthmover distance
+#' will all samples. The difference between those distances can then be used
+#' to evaluate both how dis-simmilar the sample is to other samples as well
+#' as how much the distance is dependent on the sample.
+#' @aliases
+#'   emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing-method
+#'   emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing-method
+#'   emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing-method
+#' @param x a `matrix`, `Matrix`, or `data.frame`.
+#' @param y a `matrix`, `Matrix`, or `data.frame`.
+#' @param p an exponent for the order of the distance (default: 2).
+#' @param progress Should the progress be shown as the calculation is being
+#' performed (default: `interactive()`)? 
+#' @return a tibble with the following variable.
+#' * var: The variable (either "x" or "y").
+#' * row: The row for the corresponding variable.
+#' * diff: The difference between the earthmover distance and the earthmover
+#'   distance with the row removed.
+#' * p_overall: the empirical p-value of the difference compared to all other
+#'   differences.
+#' * p_within: the empirical p-value of the differences compared to other
+#'   difference in the same data set.
+#' * p_across: the empirical p-value of the difference compared to differences
+#'   in the other data set.
+#' @examples
+#' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
+#' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
+#' emd_stabiilty(X, Y)
+#' @export
+setGeneric(
+  "emd_stability",
+  function(x, y, p, progress) standardGeneric("emd_stability")
+)
+
+two_sided_percentile = function(d) {
+  vapply(
+    seq_along(d), 
+    \(x) {
+      r = ecdf(d[-x])(d[x])
+      min(r, 1-r)
+    },
+    NA_real_
+  )
+}
+
+calc_two_sided_percentile_across = function(d) {
+  x_diff = d$diff[d$var == "x"]
+  y_diff = d$diff[d$var == "y"]
+  xp = ecdf(y_diff)(x_diff)
+  xp = vapply(xp, \(x) min(x, 1 - x), NA_real_)
+  yp = ecdf(x_diff)(y_diff)
+  yp = vapply(yp, \(x) min(x, 1 - x), NA_real_)
+  c(xp, yp)
+}
+
+setMethod(
+  "emd_stability",
+  signature(
+    x = "Matrix",
+    y = "Matrix",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, y, p, progress) {
+    if (missing(progress)) {
+      progress = interactive()
+    }
+    ref_dist = emd(x, y, p)$dist
+    xs = future_map_dbl(
+      seq_len(nrow(x)),
+      ~ ref_dist - emd_impl(x[-.x,,drop = FALSE], y, p)$dist,
+      .options=furrr_options(seed=TRUE),
+      .progress = progress
+    )
+    ys = future_map_dbl(
+      seq_len(nrow(y)),
+      ~ ref_dist - emd_impl(x, y[-.x,,drop = FALSE], p)$dist,
+      .options=furrr_options(seed=TRUE),
+      progress = progress
+    )
+    ret = tibble(
+      var = c(rep("x", length(xs)), rep("y", length(ys))),
+      row = c(seq_len(length(xs)), seq_len(length(ys))),
+      diff = c(xs, ys)
+    )
+    ret$p_overall = two_sided_percentile(ret$diff)
+    ret$p_within = c(
+      two_sided_percentile(ret$diff[ret$var == "x"]),
+      two_sided_percentile(ret$diff[ret$var == "y"])
+    )
+    ret$p_across = calc_two_sided_percentile_across(ret)
+    ret
   }
 )
 
 setMethod(
-  "emd",
+  "emd_stability",
   signature(
-    x = "data.frame",
-    y = "data.frame",
-    p = "missing",
-    keep_pairs = "ANY",
-    eps = "ANY"
+    x = "matrix",
+    y = "matrix",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
   ),
-  function(x, y, p, keep_pairs, eps) {
-    emd(x, y, 2)
+  function(x, y, p, progress) {
+    if (missing(p)) {
+      p = 2
+    }
+    if (missing(progress)) {
+      progress = interactive()
+    }
+    emd_stability(as(x, "Matrix"), as(y, "Matrix"), p, progress)
   }
 )
 
-emd(X, Y, 2)
-emd(X, Y)
-
-iris1 = iris |> filter(Sepal.Length < 5.8)
-iris2 = iris |> filter(Sepal.Length > 5.8)
-
-fit1 = rfsrc(
-  Species ~ .,
-  data = iris1
+setMethod(
+  "emd_stability",
+  signature(
+    x = "data.frame",
+    y = "data.frame",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, y, p, progress) {
+    if (missing(p)) {
+      p = 2
+    }
+    if (missing(progress)) {
+      progress = interactive()
+    }
+    l = create_matrices_from_data_frames(x, y)
+    emd_stability(l$xm, l$ym, p, progress)
+  }
 )
+
+setGeneric(
+  "embedded_emd_stability",
+  function(x, y, model, p, progress) standardGeneric("embedded_emd_stability")
+)
+
+setMethod(
+  "embedded_emd_stability",
+  signature(
+    x = "data.frame",
+    y = "data.frame",
+    model = "rfsrc",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, y, model, p, progress) {
+    if (missing(p)) {
+      p = 2
+    }
+    if (missing(progress)) {
+      progress = interactive()
+    }
+    l = embed_samples(x, y, model)
+    emd_stability(l$xm, l$ym, p, progress)
+  }
+)
+
+
