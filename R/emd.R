@@ -14,12 +14,10 @@ row_outer_product = function(x, y, fun) {
   ) |> reduce(rbind)
 }
 
-#' The Minkowski Distance
+# The Minkowski Distance
 minkowski = function(x, y, p = 2) {
   row_outer_product(x, y, \(x, y) sum((x - y)^2)^(1/p))
 }
-
-cost = minkowski(X, Y)
 
 setClassUnion("numeric_or_missing", c("missing", "numeric"))
 setClassUnion("logical_or_missing", c("missing", "logical"))
@@ -100,6 +98,7 @@ setMethod(
 )
 
 # Helper function to turn a data.frame into a model matrix.
+#' @importFrom stats model.matrix
 df_to_matrix = function(df) {
   mm = as(model.matrix( ~. - 1, df), "Matrix")
   if (nrow(mm) < nrow(df)) {
@@ -165,6 +164,7 @@ setMethod(
 #'
 #' # Calculate the embedding distance between the data sets.
 #' embedded_emd(iris1, iris2, fit1)
+#' @importFrom stats cmdscale
 #' @docType methods
 #' @rdname embedded_emd-methods
 #' @export
@@ -173,6 +173,7 @@ setGeneric(
   function(x, y, model, p) standardGeneric("embedded_emd")
 )
 
+#' @importFrom stats predict
 embed_samples = function(x, y, model) {
   xy = rbind(x, y)
   dists = predict(model, xy, distance = TRUE)$distance
@@ -231,7 +232,7 @@ setMethod(
 #' @examples
 #' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 #' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
-#' emd_stabiilty(X, Y)
+#' emd_stability(X, Y)
 #' @docType methods
 #' @rdname emd_stability-methods
 #' @export
@@ -240,6 +241,7 @@ setGeneric(
   function(x, y, p, progress) standardGeneric("emd_stability")
 )
 
+#' @importFrom stats ecdf
 two_sided_percentile = function(d) {
   vapply(
     seq_along(d), 
@@ -261,7 +263,8 @@ calc_two_sided_percentile_across = function(d) {
   c(xp, yp)
 }
 
-#' @importFrom furrr future_map_dbl
+#' @importFrom furrr future_map_dbl furrr_options
+#' @importFrom tibble tibble
 setMethod(
   "emd_stability",
   signature(
@@ -278,7 +281,7 @@ setMethod(
     xs = future_map_dbl(
       seq_len(nrow(x)),
       ~ ref_dist - emd_impl(x[-.x,,drop = FALSE], y, p)$dist,
-      .options=furrr_options(seed=TRUE),
+      .options = furrr_options(seed=TRUE),
       .progress = progress
     )
     ys = future_map_dbl(
@@ -302,6 +305,7 @@ setMethod(
   }
 )
 
+#' @importFrom methods as
 setMethod(
   "emd_stability",
   signature(
@@ -371,6 +375,7 @@ setMethod(
 #' * p_across: the empirical p-value of the difference compared to differences
 #'   in the other data set.
 #' @examples
+#' \dontrun{
 #' library(dplyr)
 #' library(randomForestSRC)
 #'
@@ -386,6 +391,7 @@ setMethod(
 #'
 #' # Calculate the embedding distance between the data sets.
 #' embedded_emd_stability(iris1, iris2, fit1)
+#' }
 #' @docType methods
 #' @rdname embedded_emd_stability-methods
 #' @export

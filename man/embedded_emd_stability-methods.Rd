@@ -47,6 +47,7 @@ to evaluate both how dis-simmilar the sample is to other samples as well
 as how much the distance is dependent on the sample.
 }
 \examples{
+\dontrun{
 library(dplyr)
 library(randomForestSRC)
 
@@ -62,4 +63,5 @@ fit1 = rfsrc(
 
 # Calculate the embedding distance between the data sets.
 embedded_emd_stability(iris1, iris2, fit1)
+}
 }

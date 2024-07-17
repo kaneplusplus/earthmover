@@ -48,5 +48,5 @@ as how much the distance is dependent on the sample.
 \examples{
 X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
-emd_stabiilty(X, Y)
+emd_stability(X, Y)
 }

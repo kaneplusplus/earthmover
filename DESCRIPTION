@@ -1,12 +1,25 @@
 Package: earthmover
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Title: (Embedded) Earthmover Distance and Related Analyses
+Version: 0.0.1
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+  person(
+    given = "Michael J.", 
+    family = "Kane", 
+    email = "michael.kane@r-project.org", 
+    role = c("aut", "cre"),
+    comment = c(ORCID = "0000-0003-1899-6662"))
+Description: The earthmover distance is the sum of the Minkowski distances of samples, weighted by their transport coefficient. It is useful for calculating distances between sets of data. This package implements the classic earthmover distance, the earthmover distance for samples that are embedded by a model, including random forests, as well as analyses and visualizations to assess the stability of the distances with respect to their constituent samples.
+License: LGPL (>= 2.1)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
+Depends:
+  furrr,
+  Matrix,
+  methods,
+  purrr,
+  tibble,
+  transport
+Suggests:
+  dplyr,
+  randomForestSRC
 RoxygenNote: 7.3.2
