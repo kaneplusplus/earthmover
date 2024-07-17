@@ -6,7 +6,7 @@ test_that("`emd_stability()` works for matrices", {
   expect_snapshot(emd_stability(X, Y))
 })
 
-test_that("`emd_stability()` works for matrices", {
+test_that("`emd_stability()` works for matrices 2", {
   set.seed(1)
   X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
   expect_snapshot(emd_stability(X, X))

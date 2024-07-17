@@ -1,3 +1,4 @@
+
 test_that("`emd()` works for matrices", {
   set.seed(1)
   X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
@@ -20,8 +21,6 @@ test_that("`emd()` works for data.frames 2", {
 })
 
 test_that("`embedded_emd()`" , {
-  library(randomForestSRC)
-
   # Subset iris for our x and y.
   # Create a model.
   fit1 = rfsrc(

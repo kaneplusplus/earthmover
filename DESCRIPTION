@@ -13,6 +13,8 @@ License: LGPL (>= 2.1)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Depends:
+  R (>= 4.1.1)
+Imports:
   furrr,
   Matrix,
   methods,
@@ -20,8 +22,7 @@ Depends:
   tibble,
   transport
 Suggests:
-    dplyr,
-    randomForestSRC,
-    testthat (>= 3.0.0)
+  randomForestSRC,
+  testthat (>= 3.0.0)
 RoxygenNote: 7.3.2
 Config/testthat/edition: 3

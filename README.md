@@ -41,12 +41,6 @@ library(dplyr)
 #> 
 #>     intersect, setdiff, setequal, union
 library(earthmover)
-#> Loading required package: furrr
-#> Loading required package: future
-#> Loading required package: Matrix
-#> Loading required package: purrr
-#> Loading required package: tibble
-#> Loading required package: transport
 library(future)
 
 # Run in parallel.

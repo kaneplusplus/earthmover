@@ -31,12 +31,11 @@ Calculate the earthmover distance between data sets \code{x} and
 \code{y} in the embedding defined by \code{model}.
 }
 \examples{
-library(dplyr)
 library(randomForestSRC)
 
 # Subset iris for our x and y.
-iris1 = iris |> filter(Sepal.Length < 5.8)
-iris2 = iris |> filter(Sepal.Length >= 5.8)
+iris1 = iris[1:75,]
+iris2 = iris[76:150,] 
 
 # Create a model.
 fit1 = rfsrc(

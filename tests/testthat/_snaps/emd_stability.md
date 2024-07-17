@@ -15,7 +15,7 @@
       7 y         4  0.0707     0.286     0.25    0.333
       8 y         5 -0.218      0.286     0       0.333
 
----
+# `emd_stability()` works for matrices 2
 
     Code
       emd_stability(X, X)

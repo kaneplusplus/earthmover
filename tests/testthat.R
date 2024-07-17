@@ -8,5 +8,6 @@
 
 library(testthat)
 library(earthmover)
-
+library(randomForestSRC)
+library(purrr)
 test_check("earthmover")
