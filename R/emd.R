@@ -1,23 +1,6 @@
-library(transport)
-library(Matrix)
-library(randomForestSRC)
-library(dplyr)
-library(ggplot2)
-library(future)
-library(purrr)
-#library(doFuture)
-#library(doRNG)
-library(furrr)
-
-plan(sequential)
-#registerDoFuture()
-
-m = 3
-n = 5
-X = matrix(rnorm(m*2, mean=-1),ncol=2) # m obs. for X
-Y = matrix(rnorm(n*2, mean=+1),ncol=2) # n obs. for Y
 
 # Helper function apply a function to all row combinations.
+#' @importFrom purrr map reduce
 row_outer_product = function(x, y, fun) {
   map(
       seq_len(nrow(x)),
@@ -42,7 +25,7 @@ setClassUnion("numeric_or_missing", c("missing", "numeric"))
 setClassUnion("logical_or_missing", c("missing", "logical"))
 setOldClass("rfsrc")
 
-#' @name The Earthmover Distance
+#' @title The Earthmover Distance
 #' @description Calculate the earthmover distance between data sets `x` and 
 #' `y`.
 #' @aliases 
@@ -60,6 +43,10 @@ setOldClass("rfsrc")
 #' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 #' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
 #' emd(X, Y)
+#' @importFrom transport transport
+#' @importFrom Matrix Matrix
+#' @docType methods
+#' @rdname emd-methods
 #' @export
 setGeneric(
   "emd", 
@@ -149,13 +136,13 @@ setMethod(
   }
 )
 
-#' @name The Earthmover Distance in a Supervised Learner Embedding
+#' @title The Earthmover Distance in a Model Embedding
 #' @description Calculate the earthmover distance between data sets `x` and
-#' `y` in the embedding defined by the supervised learner `model`.
+#' `y` in the embedding defined by `model`.
 #' @aliases embedded_emd,data.frame,data.frame,rfsrc,numeric_or_missing-method
 #' @param x a `matrix`, `Matrix`, or `data.frame`.
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
-#' @param model the supervised learner that will induce the embedded 
+#' @param model the model that will induce the embedded 
 #' representation of `x` and `y`.
 #' @param p an exponent for the order of the distance (default: 2)
 #' @return a list with the following elements:
@@ -170,7 +157,7 @@ setMethod(
 #' iris1 = iris |> filter(Sepal.Length < 5.8)
 #' iris2 = iris |> filter(Sepal.Length >= 5.8)
 #'
-#' # Create a supervised model.
+#' # Create a model.
 #' fit1 = rfsrc(
 #'   Species ~ .,
 #'   data = iris1
@@ -178,6 +165,8 @@ setMethod(
 #'
 #' # Calculate the embedding distance between the data sets.
 #' embedded_emd(iris1, iris2, fit1)
+#' @docType methods
+#' @rdname embedded_emd-methods
 #' @export
 setGeneric(
   "embedded_emd",
@@ -210,7 +199,7 @@ setMethod(
   }
 )
 
-#' @name Evaluate the Stability of the Earthmove Distance in Each Sample
+#' @title Stability of the Earthmove Distance in Each Sample
 #' @description The earthmover distance is the sum of the Minkowski 
 #' distances of samples, weighted their transport coefficients. The 
 #' `emd_stability()` function evaluates how stable the distance is in each
@@ -243,6 +232,8 @@ setMethod(
 #' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 #' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
 #' emd_stabiilty(X, Y)
+#' @docType methods
+#' @rdname emd_stability-methods
 #' @export
 setGeneric(
   "emd_stability",
@@ -270,6 +261,7 @@ calc_two_sided_percentile_across = function(d) {
   c(xp, yp)
 }
 
+#' @importFrom furrr future_map_dbl
 setMethod(
   "emd_stability",
   signature(
@@ -349,6 +341,54 @@ setMethod(
   }
 )
 
+#' @title Stability of the Embedded Earthmove Distance in Each Sample
+#' @description The earthmover distance is the sum of the Minkowski 
+#' distances of samples, weighted their transport coefficients. The 
+#' `embedded_emd_stability()` function evaluates how stable the distance 
+#' is in each of the samples embedding defined by a supvervised learner by 
+#' iteratively removing each sample, calating the new earthmover distance and 
+#' subtracting that from the earthmover distance
+#' will all samples. The difference between those distances can then be used
+#' to evaluate both how dis-simmilar the sample is to other samples as well
+#' as how much the distance is dependent on the sample.
+#' @aliases
+#'   embedded_emd_stability,data.frame,data.frame,rfsrc,numeric_or_missing,logical_or_missing-method 
+#' @param x a `matrix`, `Matrix`, or `data.frame`.
+#' @param y a `matrix`, `Matrix`, or `data.frame`.
+#' @param model the learner that will induce the embedded 
+#' @param p an exponent for the order of the distance (default: 2).
+#' @param progress Should the progress be shown as the calculation is being
+#' performed (default: `interactive()`)? 
+#' @return a tibble with the following variable.
+#' * var: The variable (either "x" or "y").
+#' * row: The row for the corresponding variable.
+#' * diff: The difference between the earthmover distance and the earthmover
+#'   distance with the row removed.
+#' * p_overall: the empirical p-value of the difference compared to all other
+#'   differences.
+#' * p_within: the empirical p-value of the differences compared to other
+#'   difference in the same data set.
+#' * p_across: the empirical p-value of the difference compared to differences
+#'   in the other data set.
+#' @examples
+#' library(dplyr)
+#' library(randomForestSRC)
+#'
+#' # Subset iris for our x and y.
+#' iris1 = iris |> filter(Sepal.Length < 5.8)
+#' iris2 = iris |> filter(Sepal.Length >= 5.8)
+#'
+#' # Create a model.
+#' fit1 = rfsrc(
+#'   Species ~ .,
+#'   data = iris1
+#' )
+#'
+#' # Calculate the embedding distance between the data sets.
+#' embedded_emd_stability(iris1, iris2, fit1)
+#' @docType methods
+#' @rdname embedded_emd_stability-methods
+#' @export
 setGeneric(
   "embedded_emd_stability",
   function(x, y, model, p, progress) standardGeneric("embedded_emd_stability")
