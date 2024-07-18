@@ -1,3 +1,5 @@
+library(randomForestSRC)
+library(purrr)
 
 test_that("`emd()` works for matrices", {
   set.seed(1)
