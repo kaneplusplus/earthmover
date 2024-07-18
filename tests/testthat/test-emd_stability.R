@@ -1,5 +1,6 @@
 library(randomForestSRC)
 library(purrr)
+library(testthat)
 
 test_that("`emd_stability()` works for matrices", {
   set.seed(1)
