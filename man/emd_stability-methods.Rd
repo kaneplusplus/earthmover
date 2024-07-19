@@ -8,7 +8,7 @@
 \alias{emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing-method}
 \title{Stability of the Earthmove Distance in Each Sample}
 \usage{
-emd_stability(x, y, p, progress)
+emd_stability(x, y, p, normality_assumption, p_value_correction, progress)
 }
 \arguments{
 \item{x}{a \code{matrix}, \code{Matrix}, or \code{data.frame}.}
@@ -19,6 +19,14 @@ emd_stability(x, y, p, progress)
 
 \item{progress}{Should the progress be shown as the calculation is being
 performed (default: \code{interactive()})?}
+
+\item{normality_assumtion}{can we assume the distances are distributed
+as normal? Possible values are:
+\itemize{
+\item \code{TRUE} assume normality give a warning if the normality test fails.
+\item \code{FALSE} do not assume normality stop if the normality test fails.
+Default is \code{TRUE}.
+}}
 }
 \value{
 a tibble with the following variable.

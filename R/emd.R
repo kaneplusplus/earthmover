@@ -21,6 +21,7 @@ minkowski = function(x, y, p = 2) {
 
 setClassUnion("numeric_or_missing", c("missing", "numeric"))
 setClassUnion("logical_or_missing", c("missing", "logical"))
+setClassUnion("character_or_missing", c("missing", "character"))
 setOldClass("rfsrc")
 
 #' @title The Earthmover Distance
@@ -135,70 +136,6 @@ setMethod(
   }
 )
 
-#' @title The Earthmover Distance in a Model Embedding
-#' @description Calculate the earthmover distance between data sets `x` and
-#' `y` in the embedding defined by `model`.
-#' @aliases embedded_emd,data.frame,data.frame,rfsrc,numeric_or_missing-method
-#' @param x a `matrix`, `Matrix`, or `data.frame`.
-#' @param y a `matrix`, `Matrix`, or `data.frame`.
-#' @param model the model that will induce the embedded 
-#' representation of `x` and `y`.
-#' @param p an exponent for the order of the distance (default: 2)
-#' @return a list with the following elements:
-#' * dist - the earthmover distance between `x` and `y`.
-#' * pairs - the transportation plan from rows of `x` to rows of `y`
-#'   along with the amount of mass to move.
-#' @examples
-#' library(randomForestSRC)
-#'
-#' # Subset iris for our x and y.
-#' iris1 = iris[1:75,]
-#' iris2 = iris[76:150,] 
-#'
-#' # Create a model.
-#' fit1 = rfsrc(
-#'   Species ~ .,
-#'   data = iris1
-#' )
-#'
-#' # Calculate the embedding distance between the data sets.
-#' embedded_emd(iris1, iris2, fit1)
-#' @importFrom stats cmdscale
-#' @docType methods
-#' @rdname embedded_emd-methods
-#' @export
-setGeneric(
-  "embedded_emd",
-  function(x, y, model, p) standardGeneric("embedded_emd")
-)
-
-#' @importFrom stats predict
-embed_samples = function(x, y, model) {
-  xy = rbind(x, y)
-  dists = predict(model, xy, distance = TRUE)$distance
-  cs = cmdscale(d = dists, k = ncol(x)-1)
-  xm = cs[seq_len(nrow(x)),]
-  ym = cs[(nrow(x) + 1):nrow(xy),]
-  list(xm = xm, ym = ym)
-}
-
-setMethod(
-  "embedded_emd",
-  signature(
-    x = "data.frame",
-    y = "data.frame",
-    model = "rfsrc",
-    p = "numeric_or_missing"
-  ),
-  function(x, y, model, p) {
-    if (missing(p)) {
-      p = 2
-    }
-    l = embed_samples(x, y, model)
-    emd(l$xm, l$ym)
-  }
-)
-
 #' @title Stability of the Earthmove Distance in Each Sample
 #' @description The earthmover distance is the sum of the Minkowski 
 #' distances of samples, weighted their transport coefficients. The 
@@ -215,21 +152,24 @@ setMethod(
 #' @param x a `matrix`, `Matrix`, or `data.frame`.
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
 #' @param p an exponent for the order of the distance (default: 2).
+#' @param normality_assumtion can we assume the distances are distributed
+#' as normal? Possible values are:
+#' * `TRUE` assume normality give a warning if the normality test fails.
+#' * `FALSE` do not assume normality stop if the normality test fails.
+#' Default is `TRUE`.
 #' @param progress Should the progress be shown as the calculation is being
 #' performed (default: `interactive()`)? 
-#' @return a tibble with the following variable.
+#' @return return an instance of type `earthmover_stability` holding
+#' slots telling whether the distances are assumed normal along with a
+#' `tbl_df` with the following variables:
 #' * var: The variable (either "x" or "y").
 #' * row: The row for the corresponding variable.
-#' * dist: The earthmover distance from the data set, minus the sample to the
-#'   other data set.
-#' * diff: The difference between the earthmover distance and the earthmover
-#'   distance with the row removed.
-#' * p_overall: the empirical p-value of the difference compared to all other
-#'   differences.
-#' * p_within: the empirical p-value of the differences compared to other
-#'   difference in the same data set.
-#' * p_across: the empirical p-value of the difference compared to differences
-#'   in the other data set.
+#' * dist_across: The earthmover distance from the data set, minus the sample 
+#'   to the other data set.
+#' * dist_within: The earthmover distance from the data set to itself, minus 
+#'   the sample to the other data set.
+#' * p_across: the p-value of the sample with respect to the other data set.
+#' * p_within: the p-value of the sample with respect to its own data set.
 #' @examples
 #' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 #' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
@@ -239,7 +179,8 @@ setMethod(
 #' @export
 setGeneric(
   "emd_stability",
-  function(x, y, p, progress) standardGeneric("emd_stability")
+  function(x, y, p, normality_assumption, p_value_correction, progress) 
+    standardGeneric("emd_stability")
 )
 
 #' @importFrom stats ecdf
@@ -254,17 +195,29 @@ two_sided_percentile = function(d) {
   )
 }
 
-calc_two_sided_percentile_across = function(d) {
-  x_dist = d$dist[d$var == "x"]
-  y_dist = d$dist[d$var == "y"]
-  xp = ecdf(y_dist)(x_dist)
-  xp = vapply(xp, \(x) min(x, 1 - x), NA_real_)
-  yp = ecdf(x_dist)(y_dist)
-  yp = vapply(yp, \(x) min(x, 1 - x), NA_real_)
-  c(xp, yp)
+left_emd_dist = function(x, y, p, progress) {
+  future_map_dbl(
+    seq_len(nrow(x)),
+    ~ emd_impl(x[-.x,,drop = FALSE], y, p)$dist,
+    .options = furrr_options(seed=TRUE),
+    .progress = progress
+  )
 }
 
+setClass(
+  "earthmover_stability",
+  representation(
+    emds = "tbl_df",
+    normality = "logical"
+  ),
+  prototype(
+    emds = tibble(),
+    normality = NA
+  )
+)
+
 #' @importFrom furrr future_map_dbl furrr_options
+#' @importFrom stats p.adjust
 #' @importFrom tibble tibble
 setMethod(
   "emd_stability",
@@ -272,38 +225,94 @@ setMethod(
     x = "Matrix",
     y = "Matrix",
     p = "numeric_or_missing",
+    normality_assumption = "logical_or_missing",
+    p_value_correction = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, progress) {
+  function(x, y, p, normality_assumption, p_value_correction, progress) {
+    if (missing(p)) {
+      p = 2
+    }
+    if (missing(normality_assumption)) {
+      normality_assumption = TRUE
+    }
+    if (missing(p_value_correction)) {
+      p_value_correction = "bonferroni"
+    }
     if (missing(progress)) {
       progress = interactive()
     }
-    ref_dist = emd(x, y, p)$dist
-    xs = future_map_dbl(
-      seq_len(nrow(x)),
-      ~ ref_dist - emd_impl(x[-.x,,drop = FALSE], y, p)$dist,
-      .options = furrr_options(seed=TRUE),
-      .progress = progress
-    )
-    ys = future_map_dbl(
-      seq_len(nrow(y)),
-      ~ emd_impl(x, y[-.x,,drop = FALSE], p)$dist,
-      .options=furrr_options(seed=TRUE),
-      progress = progress
-    )
     ret = tibble(
-      var = c(rep("x", length(xs)), rep("y", length(ys))),
-      row = c(seq_len(length(xs)), seq_len(length(ys))),
-      dist = c(xs, ys),
-      diff = c(xs - ref_dist, ys - ref_dist)
+      var = c(
+        rep("x", nrow(x)),
+        rep("y", nrow(y))
+      ),
+      row = seq_along(var)
     )
-    ret$p_overall = two_sided_percentile(ret$diff)
+    ret$dist_across = c(
+      left_emd_dist(x, y, p, progress),
+      left_emd_dist(y, x, p, progress)
+    )
+    ret$dist_within = c(
+      left_emd_dist(x, x, p, progress),
+      left_emd_dist(y, y, p, progress)
+    )
+    if (!normality_assumption) {
+      # Get the empirical p-values
+      perc_fun = \(x, y) {
+        r = ecdf(y)(x) 
+        vapply(r, \(x) min(x, 1-x), NA_real_) |>
+          p.adjust(method = p_value_correction)
+      }
+    } else {
+      xdw = ret$dist_within[ret$var == "x"]
+      ksxp = ks.test(xdw, "pnorm", mean(xdw), sd(xdw))
+      if (ksxp$p <= 0.05) {
+        warning(
+          "`x` argument is different from normal with ks p-value of ",
+          round(ksxp$p, 3)
+        )
+      }
+      ydw = ret$dist_within[ret$var == "y"]
+      ksyp = ks.test(ydw, "pnorm", mean(ydw), sd(ydw))
+      if (ksyp$p <= 0.05) {
+        warning(
+          "`x` argument is different from normal with ks p-value of ",
+          round(ksyp$p, 3)
+        )
+      }
+      perc_fun = \(x, y) {
+        r = pnorm(x, mean(y), sd(y))
+        vapply(r, \(x) min(x, 1-x), NA_real_) |>
+          p.adjust(method = p_value_correction)
+      }
+    }
+    ret$p_across = c(
+      perc_fun(
+        ret$dist_across[ret$var == "x"],
+        ret$dist_across[ret$var == "y"]
+      ),
+      perc_fun(
+        ret$dist_across[ret$var == "y"],
+        ret$dist_across[ret$var == "x"]
+      )
+    )
     ret$p_within = c(
-      two_sided_percentile(ret$dist[ret$var == "x"]),
-      two_sided_percentile(ret$dist[ret$var == "y"])
+      perc_fun(
+        ret$dist_across[ret$var == "x"],
+        ret$dist_across[ret$var == "x"]
+      ),
+      perc_fun(
+        ret$dist_across[ret$var == "y"],
+        ret$dist_across[ret$var == "y"]
+      )
     )
-    ret$p_across = calc_two_sided_percentile_across(ret)
-    ret
+    class(ret) = c("earthmover_stability", class(ret))
+    new(
+      "earthmover_stability",
+      emds = tibble(ret),
+      normality = normality_assumption
+    )
   }
 )
 
@@ -314,16 +323,31 @@ setMethod(
     x = "matrix",
     y = "matrix",
     p = "numeric_or_missing",
+    normality_assumption = "logical_or_missing",
+    p_value_correction = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, progress) {
+  function(x, y, p, normality_assumption, p_value_correction, progress) {
     if (missing(p)) {
       p = 2
+    }
+    if (missing(normality_assumption)) {
+      normality_assumption = TRUE
+    }
+    if (missing(p_value_correction)) {
+      p_value_correction = "bonferroni"
     }
     if (missing(progress)) {
       progress = interactive()
     }
-    emd_stability(as(x, "Matrix"), as(y, "Matrix"), p, progress)
+    emd_stability(
+      as(x, "Matrix"), 
+      as(y, "Matrix"), 
+      p, 
+      normality_assumption, 
+      p_value_correction,
+      progress
+    )
   }
 )
 
@@ -333,93 +357,32 @@ setMethod(
     x = "data.frame",
     y = "data.frame",
     p = "numeric_or_missing",
+    normality_assumption = "logical_or_missing",
+    p_value_correction = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, progress) {
+  function(x, y, p, normality_assumption, p_value_correction, progress) {
     if (missing(p)) {
       p = 2
+    }
+    if (missing(normality_assumption)) {
+      normality_assumption = TRUE
+    }
+    if (missing(p_value_correction)) {
+      p_value_correction = "bonferroni"
     }
     if (missing(progress)) {
       progress = interactive()
     }
     l = create_matrices_from_data_frames(x, y)
-    emd_stability(l$xm, l$ym, p, progress)
+    emd_stability(
+      l$xm, 
+      l$ym, 
+      p, 
+      normality_assumption, 
+      p_value_correction, 
+      progress
+    )
   }
 )
-
-#' @title Stability of the Embedded Earthmove Distance in Each Sample
-#' @description The earthmover distance is the sum of the Minkowski 
-#' distances of samples, weighted their transport coefficients. The 
-#' `embedded_emd_stability()` function evaluates how stable the distance 
-#' is in each of the samples embedding defined by a model by 
-#' iteratively removing each sample, calating the new earthmover distance and 
-#' subtracting that from the earthmover distance
-#' will all samples. The difference between those distances can then be used
-#' to evaluate both how dis-simmilar the sample is to other samples as well
-#' as how much the distance is dependent on the sample.
-#' @aliases
-#'   embedded_emd_stability,data.frame,data.frame,rfsrc,numeric_or_missing,logical_or_missing-method 
-#' @param x a `matrix`, `Matrix`, or `data.frame`.
-#' @param y a `matrix`, `Matrix`, or `data.frame`.
-#' @param model the learner that will induce the embedded 
-#' @param p an exponent for the order of the distance (default: 2).
-#' @param progress Should the progress be shown as the calculation is being
-#' performed (default: `interactive()`)? 
-#' @return a tibble with the following variable.
-#' * var: The variable (either "x" or "y").
-#' * row: The row for the corresponding variable.
-#' * diff: The difference between the earthmover distance and the earthmover
-#'   distance with the row removed.
-#' * p_overall: the empirical p-value of the difference compared to all other
-#'   differences.
-#' * p_within: the empirical p-value of the differences compared to other
-#'   difference in the same data set.
-#' * p_across: the empirical p-value of the difference compared to differences
-#'   in the other data set.
-#' @examples
-#' \dontrun{
-#' library(randomForestSRC)
-#'
-#' # Subset iris for our x and y.
-#' iris1 = iris[1:75,] 
-#' iris2 = iris[76:150,] 
-#'
-#' # Create a model.
-#' fit1 = rfsrc(
-#'   Species ~ .,
-#'   data = iris1
-#' )
-#'
-#' # Calculate the embedding distance between the data sets.
-#' embedded_emd_stability(iris1, iris2, fit1)
-#' }
-#' @docType methods
-#' @rdname embedded_emd_stability-methods
-#' @export
-setGeneric(
-  "embedded_emd_stability",
-  function(x, y, model, p, progress) standardGeneric("embedded_emd_stability")
-)
-
-setMethod(
-  "embedded_emd_stability",
-  signature(
-    x = "data.frame",
-    y = "data.frame",
-    model = "rfsrc",
-    p = "numeric_or_missing",
-    progress = "logical_or_missing"
-  ),
-  function(x, y, model, p, progress) {
-    if (missing(p)) {
-      p = 2
-    }
-    if (missing(progress)) {
-      progress = interactive()
-    }
-    l = embed_samples(x, y, model)
-    emd_stability(l$xm, l$ym, p, progress)
-  }
-)
-
 
