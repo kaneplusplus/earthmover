@@ -1,6 +1,6 @@
 Package: earthmover
 Title: (Embedded) Earthmover Distance and Related Analyses
-Version: 0.0.1
+Version: 0.0.2
 Authors@R: 
   person(
     given = "Michael J.", 
@@ -22,7 +22,6 @@ Imports:
   tibble,
   transport
 Suggests:
-  randomForestSRC,
   testthat (>= 3.0.0)
 RoxygenNote: 7.3.2
 Config/testthat/edition: 3

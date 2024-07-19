@@ -22,15 +22,14 @@ minkowski = function(x, y, p = 2) {
 setClassUnion("numeric_or_missing", c("missing", "numeric"))
 setClassUnion("logical_or_missing", c("missing", "logical"))
 setClassUnion("character_or_missing", c("missing", "character"))
-setOldClass("rfsrc")
 
 #' @title The Earthmover Distance
 #' @description Calculate the earthmover distance between data sets `x` and 
 #' `y`.
 #' @aliases 
-#'  emd,data.frame,data.frame,numeric_or_missing-method
-#'  emd,matrix,matrix,numeric_or_missing-method
-#'  emd,Matrix,Matrix,numeric_or_missing-method
+#'   emd,data.frame,data.frame,numeric_or_missing-method
+#'   emd,matrix,matrix,numeric_or_missing-method
+#'   emd,Matrix,Matrix,numeric_or_missing-method
 #' @param x a `matrix`, `Matrix`, or `data.frame`.
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
 #' @param p an exponent for the order of the distance (default: 2)
@@ -146,17 +145,20 @@ setMethod(
 #' to evaluate both how dis-simmilar the sample is to other samples as well
 #' as how much the distance is dependent on the sample.
 #' @aliases
-#'   emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing-method
-#'   emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing-method
-#'   emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing-method
+#'   emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method
+#'   emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method
+#'   emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method
 #' @param x a `matrix`, `Matrix`, or `data.frame`.
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
 #' @param p an exponent for the order of the distance (default: 2).
-#' @param normality_assumtion can we assume the distances are distributed
+#' @param normality_assumption can we assume the distances are distributed
 #' as normal? Possible values are:
 #' * `TRUE` assume normality give a warning if the normality test fails.
 #' * `FALSE` do not assume normality stop if the normality test fails.
 #' Default is `TRUE`.
+#' @param p_value_correction What type of p-value correction should be 
+#' employed. Options are c("holm", "hochberg", "hommel", "bonferroni", "BH", 
+#' "BY", "fdr", "none"). Default is "bonferroni".
 #' @param progress Should the progress be shown as the calculation is being
 #' performed (default: `interactive()`)? 
 #' @return return an instance of type `earthmover_stability` holding
@@ -176,6 +178,7 @@ setMethod(
 #' emd_stability(X, Y)
 #' @docType methods
 #' @rdname emd_stability-methods
+#' @seealso [stats::p.adjust()] for p-value adjustments.
 #' @export
 setGeneric(
   "emd_stability",
@@ -217,8 +220,9 @@ setClass(
 )
 
 #' @importFrom furrr future_map_dbl furrr_options
-#' @importFrom stats p.adjust
+#' @importFrom methods new
 #' @importFrom tibble tibble
+#' @importFrom stats p.adjust ks.test pnorm sd 
 setMethod(
   "emd_stability",
   signature(

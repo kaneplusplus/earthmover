@@ -3,9 +3,9 @@
 \docType{methods}
 \name{emd_stability}
 \alias{emd_stability}
-\alias{emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing-method}
-\alias{emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing-method}
-\alias{emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing-method}
+\alias{emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
+\alias{emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
+\alias{emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
 \title{Stability of the Earthmove Distance in Each Sample}
 \usage{
 emd_stability(x, y, p, normality_assumption, p_value_correction, progress)
@@ -17,32 +17,34 @@ emd_stability(x, y, p, normality_assumption, p_value_correction, progress)
 
 \item{p}{an exponent for the order of the distance (default: 2).}
 
-\item{progress}{Should the progress be shown as the calculation is being
-performed (default: \code{interactive()})?}
-
-\item{normality_assumtion}{can we assume the distances are distributed
+\item{normality_assumption}{can we assume the distances are distributed
 as normal? Possible values are:
 \itemize{
 \item \code{TRUE} assume normality give a warning if the normality test fails.
 \item \code{FALSE} do not assume normality stop if the normality test fails.
 Default is \code{TRUE}.
 }}
+
+\item{p_value_correction}{What type of p-value correction should be
+employed. Options are c("holm", "hochberg", "hommel", "bonferroni", "BH",
+"BY", "fdr", "none"). Default is "bonferroni".}
+
+\item{progress}{Should the progress be shown as the calculation is being
+performed (default: \code{interactive()})?}
 }
 \value{
-a tibble with the following variable.
+return an instance of type \code{earthmover_stability} holding
+slots telling whether the distances are assumed normal along with a
+\code{tbl_df} with the following variables:
 \itemize{
 \item var: The variable (either "x" or "y").
 \item row: The row for the corresponding variable.
-\item dist: The earthmover distance from the data set, minus the sample to the
-other data set.
-\item diff: The difference between the earthmover distance and the earthmover
-distance with the row removed.
-\item p_overall: the empirical p-value of the difference compared to all other
-differences.
-\item p_within: the empirical p-value of the differences compared to other
-difference in the same data set.
-\item p_across: the empirical p-value of the difference compared to differences
-in the other data set.
+\item dist_across: The earthmover distance from the data set, minus the sample
+to the other data set.
+\item dist_within: The earthmover distance from the data set to itself, minus
+the sample to the other data set.
+\item p_across: the p-value of the sample with respect to the other data set.
+\item p_within: the p-value of the sample with respect to its own data set.
 }
 }
 \description{
@@ -59,4 +61,7 @@ as how much the distance is dependent on the sample.
 X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
 emd_stability(X, Y)
+}
+\seealso{
+\code{\link[stats:p.adjust]{stats::p.adjust()}} for p-value adjustments.
 }

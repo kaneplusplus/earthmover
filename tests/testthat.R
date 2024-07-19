@@ -7,5 +7,6 @@
 # * https://testthat.r-lib.org/articles/special-files.html
 
 library(testthat)
+library(purrr)
 library(earthmover)
 test_check("earthmover")
