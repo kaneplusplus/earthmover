@@ -8,7 +8,7 @@
 \alias{emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
 \title{Stability of the Earthmove Distance in Each Sample}
 \usage{
-emd_stability(x, y, p, normality_assumption, p_value_correction, progress)
+emd_stability(x, y, p, progress)
 }
 \arguments{
 \item{x}{a \code{matrix}, \code{Matrix}, or \code{data.frame}.}
@@ -16,18 +16,6 @@ emd_stability(x, y, p, normality_assumption, p_value_correction, progress)
 \item{y}{a \code{matrix}, \code{Matrix}, or \code{data.frame}.}
 
 \item{p}{an exponent for the order of the distance (default: 2).}
-
-\item{normality_assumption}{can we assume the distances are distributed
-as normal? Possible values are:
-\itemize{
-\item \code{TRUE} assume normality give a warning if the normality test fails.
-\item \code{FALSE} do not assume normality stop if the normality test fails.
-Default is \code{TRUE}.
-}}
-
-\item{p_value_correction}{What type of p-value correction should be
-employed. Options are c("holm", "hochberg", "hommel", "bonferroni", "BH",
-"BY", "fdr", "none"). Default is "bonferroni".}
 
 \item{progress}{Should the progress be shown as the calculation is being
 performed (default: \code{interactive()})?}
@@ -61,7 +49,4 @@ as how much the distance is dependent on the sample.
 X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
 emd_stability(X, Y)
-}
-\seealso{
-\code{\link[stats:p.adjust]{stats::p.adjust()}} for p-value adjustments.
 }

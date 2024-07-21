@@ -23,6 +23,14 @@ setClassUnion("numeric_or_missing", c("missing", "numeric"))
 setClassUnion("logical_or_missing", c("missing", "logical"))
 setClassUnion("character_or_missing", c("missing", "character"))
 
+setOldClass(c("earthmover_stability"))
+
+#' @import Matrix
+setClassUnion(
+  "Matrix_or_matrix_or_data_frame", 
+  c("Matrix", "matrix", "data.frame")
+)
+
 #' @title The Earthmover Distance
 #' @description Calculate the earthmover distance between data sets `x` and 
 #' `y`.
@@ -41,6 +49,7 @@ setClassUnion("character_or_missing", c("missing", "character"))
 #' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 #' Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
 #' emd(X, Y)
+#' @importFrom tibble as_tibble
 #' @importFrom transport transport
 #' @importFrom Matrix Matrix
 #' @docType methods
@@ -64,12 +73,13 @@ emd_impl = function(x, y, p) {
   )
   xp = x[matches[, 1], ]
   yp = y[matches[, 2], ]
-  colnames(matches) = NULL
-  list(
+  ret = list(
     # Log this for numerical stability?
     dist = sum(matches[,3] * apply((xp - yp)^p, 1, sum))^(1/p),
-    pairs = matches
+    pairs = matches |> as_tibble()
   )
+  class(ret) = "earthmover_dist"
+  ret
 }
 
 setMethod(
@@ -96,6 +106,7 @@ setMethod(
     emd(as(x, "Matrix"), as(y, "Matrix"), p = p)
   }
 )
+
 
 # Helper function to turn a data.frame into a model matrix.
 #' @importFrom stats model.matrix
@@ -151,14 +162,6 @@ setMethod(
 #' @param x a `matrix`, `Matrix`, or `data.frame`.
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
 #' @param p an exponent for the order of the distance (default: 2).
-#' @param normality_assumption can we assume the distances are distributed
-#' as normal? Possible values are:
-#' * `TRUE` assume normality give a warning if the normality test fails.
-#' * `FALSE` do not assume normality stop if the normality test fails.
-#' Default is `TRUE`.
-#' @param p_value_correction What type of p-value correction should be 
-#' employed. Options are c("holm", "hochberg", "hommel", "bonferroni", "BH", 
-#' "BY", "fdr", "none"). Default is "bonferroni".
 #' @param progress Should the progress be shown as the calculation is being
 #' performed (default: `interactive()`)? 
 #' @return return an instance of type `earthmover_stability` holding
@@ -178,11 +181,10 @@ setMethod(
 #' emd_stability(X, Y)
 #' @docType methods
 #' @rdname emd_stability-methods
-#' @seealso [stats::p.adjust()] for p-value adjustments.
 #' @export
 setGeneric(
   "emd_stability",
-  function(x, y, p, normality_assumption, p_value_correction, progress) 
+  function(x, y, p, progress) 
     standardGeneric("emd_stability")
 )
 
@@ -207,18 +209,6 @@ left_emd_dist = function(x, y, p, progress) {
   )
 }
 
-setClass(
-  "earthmover_stability",
-  representation(
-    emds = "tbl_df",
-    normality = "logical"
-  ),
-  prototype(
-    emds = tibble(),
-    normality = NA
-  )
-)
-
 #' @importFrom furrr future_map_dbl furrr_options
 #' @importFrom methods new
 #' @importFrom tibble tibble
@@ -229,19 +219,11 @@ setMethod(
     x = "Matrix",
     y = "Matrix",
     p = "numeric_or_missing",
-    normality_assumption = "logical_or_missing",
-    p_value_correction = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, normality_assumption, p_value_correction, progress) {
+  function(x, y, p, progress) {
     if (missing(p)) {
       p = 2
-    }
-    if (missing(normality_assumption)) {
-      normality_assumption = TRUE
-    }
-    if (missing(p_value_correction)) {
-      p_value_correction = "bonferroni"
     }
     if (missing(progress)) {
       progress = interactive()
@@ -261,62 +243,8 @@ setMethod(
       left_emd_dist(x, x, p, progress),
       left_emd_dist(y, y, p, progress)
     )
-    if (!normality_assumption) {
-      # Get the empirical p-values
-      perc_fun = \(x, y) {
-        r = ecdf(y)(x) 
-        vapply(r, \(x) min(x, 1-x), NA_real_) |>
-          p.adjust(method = p_value_correction)
-      }
-    } else {
-      xdw = ret$dist_within[ret$var == "x"]
-      ksxp = ks.test(xdw, "pnorm", mean(xdw), sd(xdw))
-      if (ksxp$p <= 0.05) {
-        warning(
-          "`x` argument is different from normal with ks p-value of ",
-          round(ksxp$p, 3)
-        )
-      }
-      ydw = ret$dist_within[ret$var == "y"]
-      ksyp = ks.test(ydw, "pnorm", mean(ydw), sd(ydw))
-      if (ksyp$p <= 0.05) {
-        warning(
-          "`x` argument is different from normal with ks p-value of ",
-          round(ksyp$p, 3)
-        )
-      }
-      perc_fun = \(x, y) {
-        r = pnorm(x, mean(y), sd(y))
-        vapply(r, \(x) min(x, 1-x), NA_real_) |>
-          p.adjust(method = p_value_correction)
-      }
-    }
-    ret$p_across = c(
-      perc_fun(
-        ret$dist_across[ret$var == "x"],
-        ret$dist_across[ret$var == "y"]
-      ),
-      perc_fun(
-        ret$dist_across[ret$var == "y"],
-        ret$dist_across[ret$var == "x"]
-      )
-    )
-    ret$p_within = c(
-      perc_fun(
-        ret$dist_across[ret$var == "x"],
-        ret$dist_across[ret$var == "x"]
-      ),
-      perc_fun(
-        ret$dist_across[ret$var == "y"],
-        ret$dist_across[ret$var == "y"]
-      )
-    )
     class(ret) = c("earthmover_stability", class(ret))
-    new(
-      "earthmover_stability",
-      emds = tibble(ret),
-      normality = normality_assumption
-    )
+    ret
   }
 )
 
@@ -327,19 +255,11 @@ setMethod(
     x = "matrix",
     y = "matrix",
     p = "numeric_or_missing",
-    normality_assumption = "logical_or_missing",
-    p_value_correction = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, normality_assumption, p_value_correction, progress) {
+  function(x, y, p, progress) {
     if (missing(p)) {
       p = 2
-    }
-    if (missing(normality_assumption)) {
-      normality_assumption = TRUE
-    }
-    if (missing(p_value_correction)) {
-      p_value_correction = "bonferroni"
     }
     if (missing(progress)) {
       progress = interactive()
@@ -348,8 +268,6 @@ setMethod(
       as(x, "Matrix"), 
       as(y, "Matrix"), 
       p, 
-      normality_assumption, 
-      p_value_correction,
       progress
     )
   }
@@ -361,19 +279,11 @@ setMethod(
     x = "data.frame",
     y = "data.frame",
     p = "numeric_or_missing",
-    normality_assumption = "logical_or_missing",
-    p_value_correction = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, normality_assumption, p_value_correction, progress) {
+  function(x, y, p, progress) {
     if (missing(p)) {
       p = 2
-    }
-    if (missing(normality_assumption)) {
-      normality_assumption = TRUE
-    }
-    if (missing(p_value_correction)) {
-      p_value_correction = "bonferroni"
     }
     if (missing(progress)) {
       progress = interactive()
@@ -383,10 +293,86 @@ setMethod(
       l$xm, 
       l$ym, 
       p, 
-      normality_assumption, 
-      p_value_correction, 
       progress
     )
   }
 )
 
+# @param p_value_correction What type of p-value correction should be 
+# employed. Options are c("holm", "hochberg", "hommel", "bonferroni", "BH", 
+# "BY", "fdr", "none"). Default is "bonferroni".
+
+#' @importFrom purrr map map_dbl partial 
+#' @importFrom car bcPower powerTransform yjPower bcnPower bcPower
+gaussianize = function(x, error_on_test_failure = FALSE) {
+  if (shapiro.test(x)$p.value >= 0.05) {
+    ret = x
+  } else {
+    candidates = map(
+      c("yjPower", "bcnPower", "bcPower"), 
+      ~ powerTransform(x, family = .x)
+    )
+    xfms = list(
+      partial(yjPower, lambda = candidates[[1]]$lambda),
+      partial(bcnPower, gamma = candidates[[2]]$gamma, 
+              lambda = candidates[[2]]$lambda),
+      partial(bcPower, lambda = candidates[[3]]$lambda)
+    )
+    xt = map(xfms, ~.x(x))
+    ps = map_dbl(xt, ~ shapiro.test(.x)$p.value)
+    ret = xt[[which.max(ps)]]
+    if (max(ps) <= 0.5 && error_on_test_failure) {
+      warning("`gaussianize()` was not able to transform to a normal.")
+    }
+  }
+  ret
+}
+
+# Which points are outliers with respect to their own distribution?
+# Which points are outliers with respect to the omnibus distribution.
+
+
+#' @importFrom dplyr filter
+emd_dist_info = function(x, y, p, thresh, adjust, progress) {
+  ems = emd_stability(x, y, p, progress)
+  dxw = gaussianize(ems$dist_within[ems$var == "x"])
+  dyw = gaussianize(ems$dist_within[ems$var == "y"])
+  da = gaussianize(ems$dist_across)
+  ems$p_across = pnorm(da, mean(da), sd(da)) |>
+    vapply(\(r) min(r, 1-r), NA_real_) |>
+    p.adjust(adjust)
+  ems$p_within = c(
+    pnorm(dxw, mean(dxw), sd(dxw)) |>
+      vapply(\(r) min(r, 1-r), NA_real_) |>
+      p.adjust(adjust),
+    pnorm(dyw, mean(dyw), sd(dyw)) |>
+      vapply(\(r) min(r, 1-r), NA_real_) |>
+      p.adjust(adjust)
+  )
+  ks = ks.test(
+    ems$dist_within[ems$var == "x"], 
+    ems$dist_within[ems$var == "y"]
+  )
+  list(
+    ems = ems,
+    ks = ks
+  )
+}
+
+#' @importFrom stats p.adjust
+setMethod(
+  "summary",
+  signature(
+    object = "earthmover_stability"
+  ),
+  function(object, adjust = "BH", ...) {
+    ems = object
+    # Is one distribution different than the other?
+    dist_different =
+    ks.test(
+      ems$dist_within[ems$var == "x"],
+      ems$dist_within[ems$var == "y"]
+    )
+    ems
+  }
+)
