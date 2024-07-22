@@ -16,7 +16,7 @@ row_outer_product = function(x, y, fun) {
 
 # The Minkowski Distance
 minkowski = function(x, y, p = 2) {
-  row_outer_product(x, y, \(x, y) sum((x - y)^2)^(1/p))
+  row_outer_product(x, y, \(x, y) sum((x - y)^p)^(1/p))
 }
 
 setClassUnion("numeric_or_missing", c("missing", "numeric"))
@@ -184,7 +184,7 @@ setMethod(
 #' @export
 setGeneric(
   "emd_stability",
-  function(x, y, p, progress) 
+  function(x, y, p, adjust, progress) 
     standardGeneric("emd_stability")
 )
 
@@ -209,6 +209,19 @@ left_emd_dist = function(x, y, p, progress) {
   )
 }
 
+setClass(
+  "earthmover_stability",
+  representation(
+    jack_dists = "tbl_df",
+    p = "numeric"
+  ),
+  prototype(
+    jack_dists = tibble(),
+    p = NA_real_
+  )
+)
+
+#' @importFrom dplyr group_by mutate ungroup row_number
 #' @importFrom furrr future_map_dbl furrr_options
 #' @importFrom methods new
 #' @importFrom tibble tibble
@@ -219,32 +232,56 @@ setMethod(
     x = "Matrix",
     y = "Matrix",
     p = "numeric_or_missing",
+    adjust = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, progress) {
+  function(x, y, p, adjust, progress) {
     if (missing(p)) {
       p = 2
+    }
+    if (missing(adjust)) {
+      adjust = "BH"
     }
     if (missing(progress)) {
       progress = interactive()
     }
-    ret = tibble(
-      var = c(
-        rep("x", nrow(x)),
-        rep("y", nrow(y))
-      ),
-      row = seq_along(var)
-    )
-    ret$dist_across = c(
+    ems = tibble(
+        var = c(
+          rep("x", nrow(x)),
+          rep("y", nrow(y))
+        )
+      ) |>
+      group_by(var) |>
+      mutate(row = row_number()) |>
+      ungroup()
+
+    ems$dist_across = c(
       left_emd_dist(x, y, p, progress),
       left_emd_dist(y, x, p, progress)
     )
-    ret$dist_within = c(
+    ems$dist_within = c(
       left_emd_dist(x, x, p, progress),
       left_emd_dist(y, y, p, progress)
     )
-    class(ret) = c("earthmover_stability", class(ret))
-    ret
+    dxw = ems$dist_within[ems$var == "x"]^p
+    dyw = ems$dist_within[ems$var == "y"]^p
+    da = ems$dist_across^p
+    ems$p_across = pnorm(da, mean(da), sd(da)) |>
+      vapply(\(r) min(r, 1-r), NA_real_) |>
+      p.adjust(adjust)
+    ems$p_within = c(
+      pnorm(dxw, mean(dxw), sd(dxw)) |>
+        vapply(\(r) min(r, 1-r), NA_real_) |>
+        p.adjust(adjust),
+      pnorm(dyw, mean(dyw), sd(dyw)) |>
+        vapply(\(r) min(r, 1-r), NA_real_) |>
+        p.adjust(adjust)
+    )
+    new(
+      "earthmover_stability",
+      jack_dists = ems,
+      p = p
+    )
   }
 )
 
@@ -255,11 +292,15 @@ setMethod(
     x = "matrix",
     y = "matrix",
     p = "numeric_or_missing",
+    adjust = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, progress) {
+  function(x, y, p, adjust, progress) {
     if (missing(p)) {
       p = 2
+    }
+    if (missing(adjust)) {
+      adjust = "BH"
     }
     if (missing(progress)) {
       progress = interactive()
@@ -268,6 +309,7 @@ setMethod(
       as(x, "Matrix"), 
       as(y, "Matrix"), 
       p, 
+      adjust,
       progress
     )
   }
@@ -279,11 +321,15 @@ setMethod(
     x = "data.frame",
     y = "data.frame",
     p = "numeric_or_missing",
+    adjust = "character_or_missing",
     progress = "logical_or_missing"
   ),
-  function(x, y, p, progress) {
+  function(x, y, p, adjust, progress) {
     if (missing(p)) {
       p = 2
+    }
+    if (missing(adjust)) {
+      adjust = "BH"
     }
     if (missing(progress)) {
       progress = interactive()
@@ -293,6 +339,7 @@ setMethod(
       l$xm, 
       l$ym, 
       p, 
+      adjust,
       progress
     )
   }
@@ -302,77 +349,73 @@ setMethod(
 # employed. Options are c("holm", "hochberg", "hommel", "bonferroni", "BH", 
 # "BY", "fdr", "none"). Default is "bonferroni".
 
-#' @importFrom purrr map map_dbl partial 
-#' @importFrom car bcPower powerTransform yjPower bcnPower bcPower
-gaussianize = function(x, error_on_test_failure = FALSE) {
-  if (shapiro.test(x)$p.value >= 0.05) {
-    ret = x
-  } else {
-    candidates = map(
-      c("yjPower", "bcnPower", "bcPower"), 
-      ~ powerTransform(x, family = .x)
-    )
-    xfms = list(
-      partial(yjPower, lambda = candidates[[1]]$lambda),
-      partial(bcnPower, gamma = candidates[[2]]$gamma, 
-              lambda = candidates[[2]]$lambda),
-      partial(bcPower, lambda = candidates[[3]]$lambda)
-    )
-    xt = map(xfms, ~.x(x))
-    ps = map_dbl(xt, ~ shapiro.test(.x)$p.value)
-    ret = xt[[which.max(ps)]]
-    if (max(ps) <= 0.5 && error_on_test_failure) {
-      warning("`gaussianize()` was not able to transform to a normal.")
-    }
-  }
-  ret
-}
-
 # Which points are outliers with respect to their own distribution?
 # Which points are outliers with respect to the omnibus distribution.
 
 
-#' @importFrom dplyr filter
-emd_dist_info = function(x, y, p, thresh, adjust, progress) {
-  ems = emd_stability(x, y, p, progress)
-  dxw = gaussianize(ems$dist_within[ems$var == "x"])
-  dyw = gaussianize(ems$dist_within[ems$var == "y"])
-  da = gaussianize(ems$dist_across)
-  ems$p_across = pnorm(da, mean(da), sd(da)) |>
-    vapply(\(r) min(r, 1-r), NA_real_) |>
-    p.adjust(adjust)
-  ems$p_within = c(
-    pnorm(dxw, mean(dxw), sd(dxw)) |>
-      vapply(\(r) min(r, 1-r), NA_real_) |>
-      p.adjust(adjust),
-    pnorm(dyw, mean(dyw), sd(dyw)) |>
-      vapply(\(r) min(r, 1-r), NA_real_) |>
-      p.adjust(adjust)
-  )
-  ks = ks.test(
-    ems$dist_within[ems$var == "x"], 
-    ems$dist_within[ems$var == "y"]
-  )
-  list(
-    ems = ems,
-    ks = ks
-  )
-}
-
-#' @importFrom stats p.adjust
+#' @importFrom cli cli_h1 cli_text
+#' @importFrom dplyr filter select rename if_else
 setMethod(
   "summary",
   signature(
     object = "earthmover_stability"
   ),
-  function(object, adjust = "BH", ...) {
-    ems = object
-    # Is one distribution different than the other?
-    dist_different =
-    ks.test(
-      ems$dist_within[ems$var == "x"],
-      ems$dist_within[ems$var == "y"]
+  function(object, p_val_thresh = 0.05, ...) {
+    ks = ks.test(
+      object@jack_dists$dist_within[object@jack_dists$var == "x"], 
+      object@jack_dists$dist_within[object@jack_dists$var == "y"]
     )
-    ems
+    cli_text()
+    cli_h1("Data set difference test")
+    cli_text()
+    cli_text(style_bold("{ks$method}"))
+    cli_text(
+      "{names(ks$statistic)} = {round(ks$statistic, 3)}, ",
+      "p-value = {round(ks$p.value, 3)}"
+    )
+
+    within_p_x = object@jack_dists |>
+      filter(p_within <= p_val_thresh & var == "x")
+
+    within_p_y = object@jack_dists |>
+      filter(p_within <= p_val_thresh & var == "y")
+
+    cli_h1("Within data set outliers")
+
+    cli_h3("Left data set.")
+
+    if (nrow(within_p_x) > 0) {
+      within_p_x |>
+        select(row, p_within) |>
+        print()
+    } else {
+      cli_text("(None)")
+    }
+
+    cli_h3("Left data set.")
+
+    if (nrow(within_p_y) > 0) {
+      within_p_y |>
+        select(row, p_within) |>
+        print()
+    } else {
+      cli_text("(None)")
+    }
+
+    cli_h1("Omnibus data set outliers")
+
+    across_p = object@jack_dists |>
+      filter(p_across <= p_val_thresh) 
+
+    if (nrow(across_p) > 0) {
+      across_p |> 
+        mutate(var = if_else(var == "x", "left", "right")) |>
+        rename(p_omnibus = p_across) |>
+        select(var, row, p_omnibus) |>
+        print()
+    } else {
+      cli_text("(None)")
+    }
+    cli_text()
   }
 )

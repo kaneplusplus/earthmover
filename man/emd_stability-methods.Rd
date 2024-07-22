@@ -8,7 +8,7 @@
 \alias{emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
 \title{Stability of the Earthmove Distance in Each Sample}
 \usage{
-emd_stability(x, y, p, progress)
+emd_stability(x, y, p, adjust, progress)
 }
 \arguments{
 \item{x}{a \code{matrix}, \code{Matrix}, or \code{data.frame}.}
