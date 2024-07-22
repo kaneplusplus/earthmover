@@ -3,9 +3,9 @@
 \docType{methods}
 \name{emd_stability}
 \alias{emd_stability}
-\alias{emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
-\alias{emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
-\alias{emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method}
+\alias{emd_stability,data.frame,data.frame,numeric_or_missing,character_or_missing,logical_or_missing-method}
+\alias{emd_stability,matrix,matrix,numeric_or_missing,character_or_missing,logical_or_missing-method}
+\alias{emd_stability,Matrix,Matrix,numeric_or_missing,character_or_missing,logical_or_missing-method}
 \title{Stability of the Earthmove Distance in Each Sample}
 \usage{
 emd_stability(x, y, p, adjust, progress)
@@ -16,6 +16,10 @@ emd_stability(x, y, p, adjust, progress)
 \item{y}{a \code{matrix}, \code{Matrix}, or \code{data.frame}.}
 
 \item{p}{an exponent for the order of the distance (default: 2).}
+
+\item{adjust}{the method for adjusting the p-values of the sample. This
+argument is passed to the \code{p.adjust()} function. Default is "BH" for
+Benjamini Hocheberg.}
 
 \item{progress}{Should the progress be shown as the calculation is being
 performed (default: \code{FALSE})?}
@@ -49,4 +53,7 @@ as how much the distance is dependent on the sample.
 X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
 Y = matrix(rnorm(5*2, mean=+1),ncol=2) # n obs. for Y
 emd_stability(X, Y)
+}
+\seealso{
+\link{p.adjust} for potential values of the \code{adjust} parameter.
 }

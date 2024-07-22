@@ -2,6 +2,8 @@
 
 export(emd)
 export(emd_stability)
+exportClasses(earthmover_stability)
+exportClasses(earthmover_stability_summary)
 import(Matrix)
 importFrom(Matrix,Matrix)
 importFrom(cli,cli_h1)

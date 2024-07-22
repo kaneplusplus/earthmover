@@ -156,12 +156,15 @@ setMethod(
 #' to evaluate both how dis-simmilar the sample is to other samples as well
 #' as how much the distance is dependent on the sample.
 #' @aliases
-#'   emd_stability,data.frame,data.frame,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method
-#'   emd_stability,matrix,matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method
-#'   emd_stability,Matrix,Matrix,numeric_or_missing,logical_or_missing,character_or_missing,logical_or_missing-method
+#'   emd_stability,data.frame,data.frame,numeric_or_missing,character_or_missing,logical_or_missing-method
+#'   emd_stability,matrix,matrix,numeric_or_missing,character_or_missing,logical_or_missing-method
+#'   emd_stability,Matrix,Matrix,numeric_or_missing,character_or_missing,logical_or_missing-method
 #' @param x a `matrix`, `Matrix`, or `data.frame`.
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
 #' @param p an exponent for the order of the distance (default: 2).
+#' @param adjust the method for adjusting the p-values of the sample. This
+#' argument is passed to the `p.adjust()` function. Default is "BH" for
+#' Benjamini Hocheberg.
 #' @param progress Should the progress be shown as the calculation is being
 #' performed (default: `FALSE`)? 
 #' @return return an instance of type `earthmover_stability` holding
@@ -181,6 +184,7 @@ setMethod(
 #' emd_stability(X, Y)
 #' @docType methods
 #' @rdname emd_stability-methods
+#' @seealso [p.adjust] for potential values of the `adjust` parameter.
 #' @export
 setGeneric(
   "emd_stability",
@@ -209,7 +213,18 @@ left_emd_dist = function(x, y, p, progress) {
   )
 }
 
+#' @title The Earthmover Stability Class
+#' 
+#' @description This is the type of object returned by the `emd_stability()` 
+#' function.
+#' 
+#' @slot jack_dists the jacknife earthmover distances for samples.
+#' @slot p the order of the distances.
+#' 
+#' @name earthmover_stability-class
+#' @rdname earthmover_stability-class
 #' @importFrom tibble tibble
+#' @export
 setClass(
   "earthmover_stability",
   slots = c(
@@ -349,6 +364,26 @@ setMethod(
 # Which points are outliers with respect to their own distribution?
 # Which points are outliers with respect to the omnibus distribution.
 
+#' @title the Earthmover Stability Summary Class
+#'
+#' @description This is the type of object returned by the 
+#' `emd_stability_summary()` function.
+#' 
+#' @slot ems an object of type "earthmover_stability".
+#' @slot ks the `ks.test` object testing whether `x` and `y` are different.
+#' @slot within_p_x the samples from `x` that are significanly different
+#' than others with respect to `x`.
+#' @slot within_p_y the samples from `y` that are significanly different
+#' than others with respect to `y`.
+#' @slot omnibus_p the samples from `x` and `y` that are significanly 
+#' different than others with respect to `x` and `y` (the omnibus).
+#' @slot p_val_thresh the thresholdhold at or below which samples are 
+#' deemed significant.
+#' @seealso [emd_stability()]
+#' 
+#' @name earthmover_stability_summary-class
+#' @rdname earthmover_stability_summary-class
+#' @export
 setClass(
   "earthmover_stability_summary",
   slots = c(
