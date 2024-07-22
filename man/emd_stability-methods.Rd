@@ -18,7 +18,7 @@ emd_stability(x, y, p, adjust, progress)
 \item{p}{an exponent for the order of the distance (default: 2).}
 
 \item{progress}{Should the progress be shown as the calculation is being
-performed (default: \code{interactive()})?}
+performed (default: \code{FALSE})?}
 }
 \value{
 return an instance of type \code{earthmover_stability} holding
@@ -27,11 +27,11 @@ slots telling whether the distances are assumed normal along with a
 \itemize{
 \item var: The variable (either "x" or "y").
 \item row: The row for the corresponding variable.
-\item dist_across: The earthmover distance from the data set, minus the sample
+\item dist_omnibus: The earthmover distance from the data set, minus the sample
 to the other data set.
 \item dist_within: The earthmover distance from the data set to itself, minus
 the sample to the other data set.
-\item p_across: the p-value of the sample with respect to the other data set.
+\item p_omnibus: the p-value of the sample with respect to the other data set.
 \item p_within: the p-value of the sample with respect to its own data set.
 }
 }

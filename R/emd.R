@@ -23,7 +23,7 @@ setClassUnion("numeric_or_missing", c("missing", "numeric"))
 setClassUnion("logical_or_missing", c("missing", "logical"))
 setClassUnion("character_or_missing", c("missing", "character"))
 
-setOldClass(c("earthmover_stability"))
+setOldClass(c("earthmover_stability", "ks.test"))
 
 #' @import Matrix
 setClassUnion(
@@ -163,17 +163,17 @@ setMethod(
 #' @param y a `matrix`, `Matrix`, or `data.frame`.
 #' @param p an exponent for the order of the distance (default: 2).
 #' @param progress Should the progress be shown as the calculation is being
-#' performed (default: `interactive()`)? 
+#' performed (default: `FALSE`)? 
 #' @return return an instance of type `earthmover_stability` holding
 #' slots telling whether the distances are assumed normal along with a
 #' `tbl_df` with the following variables:
 #' * var: The variable (either "x" or "y").
 #' * row: The row for the corresponding variable.
-#' * dist_across: The earthmover distance from the data set, minus the sample 
+#' * dist_omnibus: The earthmover distance from the data set, minus the sample 
 #'   to the other data set.
 #' * dist_within: The earthmover distance from the data set to itself, minus 
 #'   the sample to the other data set.
-#' * p_across: the p-value of the sample with respect to the other data set.
+#' * p_omnibus: the p-value of the sample with respect to the other data set.
 #' * p_within: the p-value of the sample with respect to its own data set.
 #' @examples
 #' X = matrix(rnorm(3*2, mean=-1),ncol=2) # m obs. for X
@@ -209,15 +209,12 @@ left_emd_dist = function(x, y, p, progress) {
   )
 }
 
+#' @importFrom tibble tibble
 setClass(
   "earthmover_stability",
-  representation(
+  slots = c(
     jack_dists = "tbl_df",
     p = "numeric"
-  ),
-  prototype(
-    jack_dists = tibble(),
-    p = NA_real_
   )
 )
 
@@ -243,7 +240,7 @@ setMethod(
       adjust = "BH"
     }
     if (missing(progress)) {
-      progress = interactive()
+      progress = FALSE
     }
     ems = tibble(
         var = c(
@@ -255,7 +252,7 @@ setMethod(
       mutate(row = row_number()) |>
       ungroup()
 
-    ems$dist_across = c(
+    ems$dist_omnibus = c(
       left_emd_dist(x, y, p, progress),
       left_emd_dist(y, x, p, progress)
     )
@@ -265,8 +262,8 @@ setMethod(
     )
     dxw = ems$dist_within[ems$var == "x"]^p
     dyw = ems$dist_within[ems$var == "y"]^p
-    da = ems$dist_across^p
-    ems$p_across = pnorm(da, mean(da), sd(da)) |>
+    da = ems$dist_omnibus^p
+    ems$p_omnibus = pnorm(da, mean(da), sd(da)) |>
       vapply(\(r) min(r, 1-r), NA_real_) |>
       p.adjust(adjust)
     ems$p_within = c(
@@ -303,7 +300,7 @@ setMethod(
       adjust = "BH"
     }
     if (missing(progress)) {
-      progress = interactive()
+      progress = FALSE
     }
     emd_stability(
       as(x, "Matrix"), 
@@ -332,7 +329,7 @@ setMethod(
       adjust = "BH"
     }
     if (missing(progress)) {
-      progress = interactive()
+      progress = FALSE
     }
     l = create_matrices_from_data_frames(x, y)
     emd_stability(
@@ -352,50 +349,60 @@ setMethod(
 # Which points are outliers with respect to their own distribution?
 # Which points are outliers with respect to the omnibus distribution.
 
+setClass(
+  "earthmover_stability_summary",
+  slots = c(
+    ems = "earthmover_stability",
+    ks = "ks.test",
+    within_p_x = "tbl_df",
+    within_p_y = "tbl_df",
+    omnibus_p = "tbl_df",
+    p_val_thresh = "numeric"
+  )
+)
 
-#' @importFrom cli cli_h1 cli_text
-#' @importFrom dplyr filter select rename if_else
 setMethod(
-  "summary",
-  signature(
-    object = "earthmover_stability"
+  "show",
+  signature (
+    object = "earthmover_stability_summary"
   ),
-  function(object, p_val_thresh = 0.05, ...) {
-    ks = ks.test(
-      object@jack_dists$dist_within[object@jack_dists$var == "x"], 
-      object@jack_dists$dist_within[object@jack_dists$var == "y"]
-    )
+  function(object) {
+    print(object)
+  }
+)
+
+
+#' @importFrom cli cli_h1 cli_h3 cli_text style_bold
+setMethod(
+  "print",
+  signature(
+    x = "earthmover_stability_summary"
+  ),
+  function(x, ...) {
     cli_text()
     cli_h1("Data set difference test")
     cli_text()
-    cli_text(style_bold("{ks$method}"))
+    cli_text(style_bold("{x@ks$method}"))
     cli_text(
-      "{names(ks$statistic)} = {round(ks$statistic, 3)}, ",
-      "p-value = {round(ks$p.value, 3)}"
+      "{names(x@ks$statistic)} = {round(x@ks$statistic, 3)}, ",
+      "p-value = {round(x@ks$p.value, 3)}"
     )
-
-    within_p_x = object@jack_dists |>
-      filter(p_within <= p_val_thresh & var == "x")
-
-    within_p_y = object@jack_dists |>
-      filter(p_within <= p_val_thresh & var == "y")
-
     cli_h1("Within data set outliers")
 
     cli_h3("Left data set.")
 
-    if (nrow(within_p_x) > 0) {
-      within_p_x |>
+    if (nrow(x@within_p_x) > 0) {
+      x@within_p_x |>
         select(row, p_within) |>
         print()
     } else {
       cli_text("(None)")
     }
 
-    cli_h3("Left data set.")
+    cli_h3("Right data set.")
 
-    if (nrow(within_p_y) > 0) {
-      within_p_y |>
+    if (nrow(x@within_p_y) > 0) {
+      x@within_p_y |>
         select(row, p_within) |>
         print()
     } else {
@@ -404,18 +411,50 @@ setMethod(
 
     cli_h1("Omnibus data set outliers")
 
-    across_p = object@jack_dists |>
-      filter(p_across <= p_val_thresh) 
-
-    if (nrow(across_p) > 0) {
-      across_p |> 
+    if (nrow(x@omnibus_p) > 0) {
+      x@omnibus_p |> 
         mutate(var = if_else(var == "x", "left", "right")) |>
-        rename(p_omnibus = p_across) |>
         select(var, row, p_omnibus) |>
         print()
     } else {
       cli_text("(None)")
     }
+
     cli_text()
+  }
+)
+
+#' @importFrom dplyr filter select rename if_else
+#' @importFrom methods new
+setMethod(
+  "summary",
+  signature(
+    object = "earthmover_stability"
+  ),
+  function(object, p_val_thresh = 0.05, ...) {
+
+    ks = ks.test(
+      object@jack_dists$dist_within[object@jack_dists$var == "x"],
+      object@jack_dists$dist_within[object@jack_dists$var == "y"]
+    )
+
+    within_p_x = object@jack_dists |>
+      filter(p_within <= p_val_thresh & var == "x")
+
+    within_p_y = object@jack_dists |>
+      filter(p_within <= p_val_thresh & var == "y")
+
+
+    omnibus_p = object@jack_dists |>
+      filter(p_omnibus <= p_val_thresh) 
+    new(
+      "earthmover_stability_summary",
+      ems = object,
+      ks = ks,
+      within_p_x = within_p_x,
+      within_p_y = within_p_y,
+      omnibus_p = omnibus_p,
+      p_val_thresh = p_val_thresh
+    )
   }
 )
