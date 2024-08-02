@@ -1,5 +1,7 @@
 utils::globalVariables(c(
-  "var",
+  "dist_within",
   "p_within",
-  "p_omnibus"
+  "p_omnibus",
+  "var",
+  "Variable"
 ))

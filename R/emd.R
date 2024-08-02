@@ -233,6 +233,33 @@ setClass(
   )
 )
 
+#' @importFrom methods setAs
+#' @export
+setAs(
+  "list",
+  "earthmover_stability",
+  function(from, to) {
+    new(
+      "earthmover_stability",
+      jack_dists = from$jack_dists,
+      p = from$p
+    )
+  }
+)
+
+#' @importFrom methods setAs
+#' @export
+setAs(
+  "earthmover_stability",
+  "list",
+  function(from, to) {
+    list(
+      jack_dists = from@jack_dists,
+      p = from@p
+    )
+  }
+)
+
 #' @importFrom dplyr group_by mutate ungroup row_number
 #' @importFrom furrr future_map_dbl furrr_options
 #' @importFrom methods new
@@ -491,5 +518,23 @@ setMethod(
       omnibus_p = omnibus_p,
       p_val_thresh = p_val_thresh
     )
+  }
+)
+
+#' @importFrom dplyr select
+#' @importFrom ggplot2 ggplot aes stat_ecdf ylab xlab
+setMethod(
+  "plot",
+  signature(
+    x = "earthmover_stability"
+  ),
+  function(x, ...) {
+    x@jack_dists |>
+      select(Variable = var, dist_within) |>
+      ggplot(aes(x = dist_within, group = Variable, color = Variable)) +
+        stat_ecdf(geom = "point") +
+        stat_ecdf(geom = "step") +
+        ylab("Empirical Distribution") +
+        xlab("Distance")
   }
 )
