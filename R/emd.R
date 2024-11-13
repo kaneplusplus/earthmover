@@ -26,9 +26,10 @@ setClassUnion("character_or_missing", c("missing", "character"))
 setOldClass(c("earthmover_stability", "ks.test"))
 
 #' @import Matrix
+#' @import tibble
 setClassUnion(
   "Matrix_or_matrix_or_data_frame", 
-  c("Matrix", "matrix", "data.frame")
+  c("Matrix", "matrix", "data.frame", "tbl_df")
 )
 
 #' @title The Earthmover Distance
@@ -204,14 +205,170 @@ two_sided_percentile = function(d) {
   )
 }
 
-left_emd_dist = function(x, y, p, progress) {
-  future_map_dbl(
-    seq_len(nrow(x)),
-    ~ emd_impl(x[-.x,,drop = FALSE], y, p)$dist,
-    .options = furrr_options(seed=TRUE),
-    .progress = progress
-  )
-}
+# jacknife_oulier_test
+# left_jacknife_dist_test # with plot.
+# left_jillknife_dist
+# left_jillknife_test
+
+#' @export
+setGeneric(
+  "outlier_test",
+  function(x, by, p, adjust, progress) standardGeneric("outlier_test")
+)
+
+#' @importFrom purrr map_dbl reduce
+setMethod(
+  "outlier_test",
+  signature(
+    x = "Matrix_or_matrix_or_data_frame",
+    by = "character_or_missing",
+    p = "numeric_or_missing",
+    adjust = "character_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, by, p, adjust, progress) {
+    if (missing(p)) {
+      p = 2
+    }
+    if (missing(adjust)) {
+      adjust = "BH"
+    }
+    if (missing(progress)) {
+      progress = FALSE
+    }
+    if (missing(by)) {
+      left_jacknife_sample_test(x, x, p, adjust, progress)
+    } else {
+      xg = group_nest(x, !!as.symbol(by)) |>
+        mutate(
+          test = 
+            map(
+              data, 
+              ~ left_jacknife_sample_test(.x, .x, p, adjust, progress)
+            )
+        )
+      xg$n = map_dbl(xg$test, nrow)
+      if (nrow(xg) > 1) {
+        for (i in 2:nrow(xg)) {
+          xg$test[[i]]$row = xg$test[[i]]$row + xg$n[i - 1]
+        }
+      }
+      reduce(xg$test, bind_rows)
+    }
+  }
+)
+
+#' @export
+setGeneric(
+  "left_jacknife_dist",
+  function(x, y, p, progress) standardGeneric("left_jacknife_dist")
+)
+
+#' @importFrom furrr future_map_dbl furrr_options
+setMethod(
+  "left_jacknife_dist",
+  signature(
+    x = "Matrix",
+    y = "Matrix",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, y, p, progress) {
+    if (missing(p)) {
+      p = 2
+    }
+    if (missing(progress)) {
+      progress = FALSE
+    }
+    future_map_dbl(
+      seq_len(nrow(x)),
+      ~ emd_impl(x[-.x,,drop = FALSE], y, p)$dist,
+      .options = furrr_options(seed=TRUE),
+      .progress = progress
+    )
+  }
+)
+
+#' @importFrom methods as
+setMethod(
+  "left_jacknife_dist",
+  signature(
+    x = "matrix",
+    y = "matrix",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
+   ),
+    function(x, y, p, progress) {
+      if (missing(p)) {
+        p = 2
+      }
+      if (missing(progress)) {
+        progress = FALSE
+      }
+      left_jacknife_dist(as(x, "Matrix"), as(y, "Matrix"), p, progress)
+   }
+)
+
+setMethod(
+  "left_jacknife_dist",
+  signature(
+    x = "data.frame",
+    y = "data.frame",
+    p = "numeric_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, y, p, progress) {
+    if (missing(p)) {
+        p = 2
+    }
+    if (missing(progress)) {
+      progress = FALSE
+    }
+    left_jacknife_dist(df_to_matrix(x), df_to_matrix(y), p, progress)
+  }
+)
+
+#' @export
+setGeneric(
+  "left_jacknife_sample_test",
+  function(x, y, p, adjust, progress) standardGeneric("left_jacknife_sample_test")
+)
+
+#' @importFrom stats p.adjust pnorm
+#' @importFrom tibble tibble
+setMethod(
+  "left_jacknife_sample_test",
+  signature(
+    x = "Matrix_or_matrix_or_data_frame",
+    y = "Matrix_or_matrix_or_data_frame",
+    p = "numeric_or_missing",
+    adjust = "character_or_missing",
+    progress = "logical_or_missing"
+  ),
+  function(x, y, p, adjust, progress) {
+    if (!all(class(x) == class(y))) {
+      stop("`x` and `y` must be of the same type.")
+    }
+    if (missing(p)) {
+        p = 2
+    }
+    if (missing(progress)) {
+      progress = FALSE
+    }
+    if (missing(adjust)) {
+      adjust = "BH"
+    }
+    left_dists = left_jacknife_dist(x, y, p, progress)
+    within_dists = left_jacknife_dist(y, y, p, progress)
+    tibble(
+      row = seq_len(nrow(x)),
+      p_val = 
+        pnorm(left_dists, mean = mean(within_dists), sd = sd(within_dists)) |>
+          vapply(\(r) min(r, 1-r), NA_real_) |>
+          p.adjust(adjust)
+    )
+  }
+)
 
 #' @title The Earthmover Stability Class
 #' 
@@ -295,12 +452,12 @@ setMethod(
       ungroup()
 
     ems$dist_omnibus = c(
-      left_emd_dist(x, y, p, progress),
-      left_emd_dist(y, x, p, progress)
+      left_jacknife_dist(x, y, p, progress),
+      left_jacknife_dist(y, x, p, progress)
     )
     ems$dist_within = c(
-      left_emd_dist(x, x, p, progress),
-      left_emd_dist(y, y, p, progress)
+      left_jacknife_dist(x, x, p, progress),
+      left_jacknife_dist(y, y, p, progress)
     )
     dxw = ems$dist_within[ems$var == "x"]^p
     dyw = ems$dist_within[ems$var == "y"]^p
